@@ -3,10 +3,6 @@ include $(CLEAR_VARS)
 
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
-ifeq ($(BOARD_HTC_3D_SUPPORT),true)
-   LOCAL_CFLAGS += -DHTC_3D_SUPPORT
-endif
-
 LOCAL_SRC_FILES:=                         \
         ACodec.cpp                        \
         AACExtractor.cpp                  \
@@ -78,7 +74,7 @@ else
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/openmax
 endif
 
-ifneq ($(filter caf bfam,$(TARGET_QCOM_AUDIO_VARIANT)),)
+ifneq ($(filter caf bfam legacy,$(TARGET_QCOM_AUDIO_VARIANT)),)
     ifeq ($(BOARD_USES_LEGACY_ALSA_AUDIO),true)
         ifeq ($(call is-chipset-in-board-platform,msm8960),true)
             LOCAL_SRC_FILES += LPAPlayerALSA.cpp TunnelPlayer.cpp
@@ -96,6 +92,10 @@ ifneq ($(filter caf bfam,$(TARGET_QCOM_AUDIO_VARIANT)),)
             LOCAL_CFLAGS += -DLEGACY_LPA -DUSE_LPA_MODE
         endif
         ifeq ($(call is-chipset-in-board-platform,msm7x30),true)
+            LOCAL_SRC_FILES += LPAPlayer.cpp
+            LOCAL_CFLAGS += -DLEGACY_LPA -DUSE_LPA_MODE
+        endif
+        ifeq ($(call is-chipset-in-board-platform,msm7x27a),true)
             LOCAL_SRC_FILES += LPAPlayer.cpp
             LOCAL_CFLAGS += -DLEGACY_LPA -DUSE_LPA_MODE
         endif
@@ -165,6 +165,16 @@ ifeq ($(TARGET_ENABLE_QC_AV_ENHANCEMENTS),true)
                $(TOP)/hardware/qcom/media/mm-core/inc
        endif
 endif #TARGET_ENABLE_AV_ENHANCEMENTS
+
+ifeq ($(TARGET_QCOM_LEGACY_OMX),true)
+    LOCAL_CFLAGS += -DQCOM_LEGACY_OMX
+    TARGET_QCOM_LEGACY_MMPARSER := true
+endif
+
+ifeq ($(TARGET_QCOM_LEGACY_MMPARSER),true)
+    LOCAL_CFLAGS += -DQCOM_LEGACY_MMPARSER
+    LOCAL_SRC_FILES += ExtendedMediaDefs.cpp
+endif
 
 LOCAL_SRC_FILES += \
         chromium_http_stub.cpp

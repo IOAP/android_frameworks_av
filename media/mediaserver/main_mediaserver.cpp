@@ -34,6 +34,9 @@
 #include "MediaLogService.h"
 #include "MediaPlayerService.h"
 #include "AudioPolicyService.h"
+#ifdef AUDIO_LISTEN_ENABLED
+#include "ListenService.h"
+#endif
 
 using namespace android;
 
@@ -41,12 +44,6 @@ using namespace android;
 namespace android { namespace SecTVOutService {
 void instantiate(void);
 } }
-#endif
-
-#define CSD_HACK	1
-
-#ifdef CSD_HACK
-static void init_libcsd_workaround();
 #endif
 
 int main(int argc, char** argv)
@@ -60,11 +57,6 @@ int main(int argc, char** argv)
     // detailed information such as signal numbers, stop and continue, resource usage, etc.
     // But it is also more complex.  Consider replacing this by independent processes, and using
     // binder on death notification instead.
-
-#ifdef CSD_HACK
-    init_libcsd_workaround();
-#endif
-
     if (doLog && (childPid = fork()) != 0) {
         // media.log service
         //prctl(PR_SET_NAME, (unsigned long) "media.log", 0, 0, 0);
@@ -147,38 +139,13 @@ int main(int argc, char** argv)
         AudioFlinger::instantiate();
         MediaPlayerService::instantiate();
         CameraService::instantiate();
+#ifdef AUDIO_LISTEN_ENABLED
+        ALOGI("ListenService instantiated");
+        ListenService::instantiate();
+#endif
         AudioPolicyService::instantiate();
         registerExtensions();
         ProcessState::self()->startThreadPool();
         IPCThreadState::self()->joinThreadPool();
     }
 }
-
-#ifdef CSD_HACK
-
-#include <dlfcn.h>
-static void *csd = 0;
-static int (*csd_client_start_record)(int) = 0;
-static int (*csd_client_stop_record)() = 0;
-static void doit(int sig) {
-    ALOGI("CSD HACK: signal %d received", sig);
-    (*csd_client_stop_record) ();
-    if (sig == SIGHUP) (*csd_client_start_record) (1);
-}
-static void init_libcsd_workaround() {
-    csd = dlopen("/system/lib/libcsd-client.so",RTLD_NOW);
-    if (!csd) return;
-    csd_client_start_record = (typeof(csd_client_start_record)) dlsym(csd,"csd_client_start_record");   
-    csd_client_stop_record = (typeof(csd_client_stop_record)) dlsym(csd,"csd_client_stop_record");   
-    if (!csd_client_start_record || !csd_client_stop_record) {
-	dlclose(csd);
-	return;
-    }	 
-    signal(SIGUSR1, doit);
-    signal(SIGHUP, doit);
-    ALOGI("libcsd-client setup done");
-}
-
-#endif
-
-
