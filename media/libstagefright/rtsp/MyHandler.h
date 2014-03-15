@@ -695,27 +695,23 @@ struct MyHandler : public AHandler {
                         i = response->mHeaders.indexOfKey("transport");
                         CHECK_GE(i, 0);
 
-                        if (track->mRTPSocket != -1 && track->mRTCPSocket != -1) {
-                            if (!track->mUsingInterleavedTCP) {
-                                AString transport = response->mHeaders.valueAt(i);
+                        if (!track->mUsingInterleavedTCP) {
+                            AString transport = response->mHeaders.valueAt(i);
 
-                                // We are going to continue even if we were
-                                // unable to poke a hole into the firewall...
-                                pokeAHole(
-                                        track->mRTPSocket,
-                                        track->mRTCPSocket,
-                                        transport);
-                            }
-
-                            mRTPConn->addStream(
-                                    track->mRTPSocket, track->mRTCPSocket,
-                                    mSessionDesc, index,
-                                    notify, track->mUsingInterleavedTCP);
-
-                            mSetupTracksSuccessful = true;
-                        } else {
-                            result = BAD_VALUE;
+                            // We are going to continue even if we were
+                            // unable to poke a hole into the firewall...
+                            pokeAHole(
+                                    track->mRTPSocket,
+                                    track->mRTCPSocket,
+                                    transport);
                         }
+
+                        mRTPConn->addStream(
+                                track->mRTPSocket, track->mRTCPSocket,
+                                mSessionDesc, index,
+                                notify, track->mUsingInterleavedTCP);
+
+                        mSetupTracksSuccessful = true;
                     }
                 }
 
@@ -739,7 +735,7 @@ struct MyHandler : public AHandler {
                 }
 
                 ++index;
-                if (result == OK && index < mSessionDesc->countTracks()) {
+                if (index < mSessionDesc->countTracks()) {
                     setupTrack(index);
                 } else if (mSetupTracksSuccessful) {
                     ++mKeepAliveGeneration;
@@ -1409,7 +1405,10 @@ struct MyHandler : public AHandler {
         CHECK(GetAttribute(range.c_str(), "npt", &val));
 
         float npt1, npt2;
-        if (!ASessionDescription::parseNTPRange(val.c_str(), &npt1, &npt2)) {
+        int64_t durationUs;
+        if (!ASessionDescription::parseNTPRange(val.c_str(), &npt1, &npt2)
+            && !mSessionDesc->getDurationUs(&durationUs)
+            && (durationUs==0)) {
             // This is a live stream and therefore not seekable.
 
             ALOGI("This is a live stream");
@@ -1572,8 +1571,6 @@ private:
         info->mUsingInterleavedTCP = false;
         info->mFirstSeqNumInSegment = 0;
         info->mNewSegment = true;
-        info->mRTPSocket = -1;
-        info->mRTCPSocket = -1;
         info->mRTPAnchor = 0;
         info->mNTPAnchorUs = -1;
         info->mNormalPlayTimeRTP = 0;
