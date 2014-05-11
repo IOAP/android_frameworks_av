@@ -45,8 +45,25 @@
 #include <utils/String8.h>
 
 #include <cutils/properties.h>
+#include <cutils/log.h>
+
+#include <dlfcn.h>
 
 namespace android {
+
+static void *loadExtractorPlugin() {
+    void *ret = NULL;
+    char lib[PROPERTY_VALUE_MAX];
+    if (property_get("media.stagefright.extractor-plugin", lib, "libFFmpegExtractor.so")) {
+        if (void *extractorLib = ::dlopen(lib, RTLD_LAZY)) {
+            ret = ::dlsym(extractorLib, "getExtractorPlugin");
+            ALOGW_IF(!ret, "Failed to find symbol, dlerror: %s", ::dlerror());
+        } else {
+            ALOGV("Failed to load %s, dlerror: %s", lib, ::dlerror());
+        }
+    }
+    return ret;
+}
 
 bool DataSource::getUInt16(off64_t offset, uint16_t *x) {
     *x = 0;
@@ -110,6 +127,9 @@ status_t DataSource::getSize(off64_t *size) {
 
 Mutex DataSource::gSnifferMutex;
 List<DataSource::SnifferFunc> DataSource::gSniffers;
+#ifdef QCOM_LEGACY_MMPARSER
+List<DataSource::SnifferFunc>::iterator DataSource::extendedSnifferPosition;
+#endif
 bool DataSource::gSniffersRegistered = false;
 
 bool DataSource::sniff(
@@ -127,6 +147,11 @@ bool DataSource::sniff(
 
     for (List<SnifferFunc>::iterator it = gSniffers.begin();
          it != gSniffers.end(); ++it) {
+#ifdef QCOM_LEGACY_MMPARSER
+        // Don't try to use ExtendedExtractor if already found a suitable from the defaults
+        if(it == extendedSnifferPosition && *confidence > 0.0)
+            return true;
+#endif
         String8 newMimeType;
         float newConfidence;
         sp<AMessage> newMeta;
@@ -143,7 +168,11 @@ bool DataSource::sniff(
 }
 
 // static
+#ifdef QCOM_LEGACY_MMPARSER
+void DataSource::RegisterSniffer_l(SnifferFunc func, bool isExtendedExtractor) {
+#else
 void DataSource::RegisterSniffer_l(SnifferFunc func) {
+#endif
     for (List<SnifferFunc>::iterator it = gSniffers.begin();
          it != gSniffers.end(); ++it) {
         if (*it == func) {
@@ -152,6 +181,12 @@ void DataSource::RegisterSniffer_l(SnifferFunc func) {
     }
 
     gSniffers.push_back(func);
+#ifdef QCOM_LEGACY_MMPARSER
+    if(isExtendedExtractor) {
+        extendedSnifferPosition = gSniffers.end();
+        extendedSnifferPosition--;
+    }
+#endif
 }
 
 // static
@@ -171,10 +206,15 @@ void DataSource::RegisterDefaultSniffers() {
     RegisterSniffer_l(SniffMP3);
     RegisterSniffer_l(SniffAAC);
     RegisterSniffer_l(SniffMPEG2PS);
+#ifdef QCOM_LEGACY_MMPARSER
+    ExtendedExtractor::RegisterSniffers();
+#else
     RegisterSniffer_l(SniffWVM);
 #ifdef QCOM_HARDWARE
     RegisterSniffer_l(ExtendedExtractor::Sniff);
 #endif
+#endif
+    RegisterSnifferPlugin();
 
     char value[PROPERTY_VALUE_MAX];
     if (property_get("drm.service.enabled", value, NULL)
@@ -182,6 +222,20 @@ void DataSource::RegisterDefaultSniffers() {
         RegisterSniffer_l(SniffDRM);
     }
     gSniffersRegistered = true;
+}
+
+// static
+void DataSource::RegisterSnifferPlugin() {
+    static void (*getExtractorPlugin)(MediaExtractor::Plugin *) =
+            (void (*)(MediaExtractor::Plugin *))loadExtractorPlugin();
+
+    MediaExtractor::Plugin *plugin = MediaExtractor::getPlugin();
+    if (!plugin->sniff && getExtractorPlugin) {
+        getExtractorPlugin(plugin);
+    }
+    if (plugin->sniff) {
+        RegisterSniffer_l(plugin->sniff);
+    }
 }
 
 // static

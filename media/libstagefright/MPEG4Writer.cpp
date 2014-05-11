@@ -1762,7 +1762,7 @@ status_t MPEG4Writer::Track::start(MetaData *params) {
     mHFRRatio = ExtendedUtils::HFR::getHFRRatio(mMeta);
     // Workaround until HFR is fully functional
     if (!mHFRRatio)
-	mHFRRatio = 1;
+        mHFRRatio = 1;
 
     return OK;
 }
